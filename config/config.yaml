@@ -1,0 +1,146 @@
+# Enhanced Indonesian Meeting Transcription System Configuration
+
+# Transcription Settings
+transcription:
+  # Model: "tiny", "base", "small", "medium", "large-v1", "large-v2", "large-v3-turbo"
+  model: "large-v3-turbo"
+
+  # Device: "cpu", "cuda", "mps" (auto-detected if set to "auto")
+  device: "auto"
+
+  # Compute type: "int8", "float16", "float32"
+  # Use "int8" for CPU, "float16" for GPU/CUDA/MPS
+  compute_type: "auto"
+
+  # Language (enforced)
+  language: "id"
+
+  # Beam size for decoding (higher = better accuracy, slower)
+  beam_size: 5
+
+  # VAD (Voice Activity Detection) to skip silence
+  vad:
+    enabled: true
+    # Minimum speech duration in seconds
+    min_speech_duration: 0.5
+    # Minimum silence duration in seconds
+    min_silence_duration: 1.0
+    # Speech padding in seconds
+    speech_padding_ms: 400
+
+# Speaker Diarization Settings
+diarization:
+  # Method: "pyannote", "resemblyzer", or "hybrid"
+  method: "hybrid"
+
+  # Pyannote.audio settings (requires HuggingFace token)
+  pyannote:
+    model: "pyannote/speaker-diarization-3.1"
+    # HuggingFace token (set via environment: HF_TOKEN)
+    # Or accept licenses at: https://hf.co/pyannote/speaker-diarization-3.1
+    hf_token: null
+
+  # Resemblyzer settings (fallback/backup)
+  resemblyzer:
+    # Chunk size in seconds for speaker embeddings
+    chunk_duration_sec: 8.0
+    # Hop size in seconds for sliding window
+    hop_duration_sec: 0.75
+    # Window size in seconds for embedding extraction
+    window_duration_sec: 1.5
+    # Skip chunks with low amplitude (silence threshold)
+    amplitude_threshold: 0.005
+
+  # Clustering settings
+  clustering:
+    # Distance threshold for auto-detecting number of speakers
+    distance_threshold: 0.55
+    # Metric: "cosine", "euclidean"
+    metric: "cosine"
+    # Linkage: "average", "complete", "single"
+    linkage: "average"
+    # Minimum number of speakers
+    min_speakers: 2
+    # Maximum number of speakers
+    max_speakers: 15
+
+# Speaker Identification Settings
+speaker_identification:
+  enabled: true
+  # Database path
+  database_path: "speakers/database.json"
+
+  # Matching threshold (cosine similarity)
+  # Higher = stricter matching (0.75-0.85 recommended)
+  threshold: 0.80
+
+  # Number of samples required for enrollment
+  enrollment_min_samples: 3
+  enrollment_max_samples: 10
+
+  # Profile storage
+  profiles_path: "speakers/profiles"
+
+# Summarization Settings
+summarization:
+  enabled: true
+
+  # Provider: "openai" or "local"
+  provider: "openai"
+
+  # OpenAI settings
+  openai:
+    # Model: "gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo"
+    model: "gpt-4o-mini"
+    # API key (set via environment: OPENAI_API_KEY)
+    api_key: null
+    # Temperature for generation (0.0-1.0)
+    temperature: 0.3
+    # Maximum tokens for summary
+    max_tokens: 2000
+
+  # Local LLM settings (experimental)
+  local:
+    # Model path or name (e.g., "llama3.1")
+    model: "llama3.1"
+    # Base URL for local API (e.g., Ollama)
+    base_url: "http://localhost:11434"
+    # Temperature
+    temperature: 0.3
+
+  # Language for summary (Indonesian)
+  language: "id"
+
+# Output Settings
+output:
+  # Output directory
+  directory: "output"
+
+  # Include timestamps in transcript
+  include_timestamps: true
+
+  # Format: "txt", "md", "json", or "all"
+  formats: ["md"]
+
+  # Group consecutive same-speaker segments into paragraphs
+  paragraph_sentences: 6
+
+  # Include AI summary in output
+  include_summary: true
+
+  # Include action items table
+  include_action_items: true
+
+# Refinement Settings
+refinement:
+  enabled: true
+  # Glossary file path (optional)
+  glossary_file: "config/glossary.txt"
+  # Additional replacements
+  custom_terms: {}
+
+# Logging Settings
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  # Log file path (null = stdout only)
+  file: "transcription.log"

@@ -1,0 +1,43 @@
+# Enhanced Indonesian Meeting Transcription System
+# Requirements.txt
+
+# Core transcription
+faster-whisper>=1.0.0
+torch>=2.0.0
+torchaudio>=2.0.0
+
+# Speaker diarization and identification
+pyannote.audio>=3.0.0
+resemblyzer>=0.1.1
+pyannote.core>=5.0.0
+pyannote.metrics>=3.0.0
+pyannote.dataset>=2.0.0
+
+# Audio processing
+pydub>=0.25.0
+soundfile>=0.12.0
+librosa>=0.10.0
+
+# Clustering and ML
+scikit-learn>=1.3.0
+numpy>=1.24.0
+scipy>=1.10.0
+
+# AI summarization
+openai>=1.0.0
+
+# Configuration and utilities
+pyyaml>=6.0
+python-dotenv>=1.0.0
+tqdm>=4.65.0
+
+# Optional: VAD (Voice Activity Detection)
+# silero-vad is usually downloaded automatically, but you can also use:
+# webrtcvad>=2.0.10
+
+# Optional: For local LLM support
+# requests>=2.31.0  # For API calls to local models
+
+# Development dependencies (optional)
+# pytest>=7.4.0
+# black>=23.0.0
