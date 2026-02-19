@@ -13,13 +13,15 @@ import torch
 
 
 def get_device():
-    """Auto-detect the best available device for inference."""
+    """Auto-detect the best available device for inference.
+
+    Note: faster-whisper doesn't support MPS (Apple Silicon) yet, so we use CPU.
+    For GPU acceleration on Apple Silicon, consider using the original Whisper model.
+    """
     if torch.cuda.is_available():
         return "cuda", "float16"  # NVIDIA GPU
-    elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-        return "mps", "float16"  # Apple Silicon GPU
     else:
-        return "cpu", "int8"  # CPU fallback
+        return "cpu", "int8"  # CPU (MPS not supported by faster-whisper yet)
 
 
 def format_time(seconds):
@@ -92,8 +94,8 @@ def transcribe_with_speakers(audio_path, model_size="large-v3-turbo", num_speake
     print(f"[3/4] Loading audio & computing speaker embeddings...")
     wav = load_audio_as_wav(audio_path)
 
-    # Use GPU for encoder if available
-    encoder_device = device if device in ["cuda", "mps"] else "cpu"
+    # Use GPU for encoder if available (MPS not supported by resemblyzer)
+    encoder_device = device if device == "cuda" else "cpu"
     print(f"  Encoder device: {encoder_device.upper()}")
     encoder = VoiceEncoder(encoder_device)
 
@@ -153,6 +155,7 @@ def transcribe_with_speakers(audio_path, model_size="large-v3-turbo", num_speake
     embeddings_array = np.array(embeddings)
 
     if num_speakers and num_speakers > 1:
+        # When num_speakers is specified, use it directly
         clustering = AgglomerativeClustering(n_clusters=num_speakers)
         labels = clustering.fit_predict(embeddings_array)
     else:
@@ -201,14 +204,31 @@ if __name__ == "__main__":
     import time
 
     if len(sys.argv) < 2:
-        print("Usage: python transcribe.py <audio_file> [num_speakers]")
+        print("Usage: python transcribe.py <audio_file> [num_speakers] [output_basename]")
         print("\nExamples:")
         print("  python transcribe.py meeting.m4a")
         print("  python transcribe.py meeting.m4a 5  # Specify 5 speakers")
+        print("  python transcribe.py meeting.m4a 5 meeting  # Output to meeting_speakers.txt")
+        print("  python transcribe.py meeting.m4a meeting  # Auto-detect speakers, output to meeting_speakers.txt")
         sys.exit(1)
 
     file_path = sys.argv[1]
-    num_speakers = int(sys.argv[2]) if len(sys.argv) > 2 else None
+
+    # Parse arguments: can be either:
+    # - transcribe.py audio.m4a num_speakers output_base
+    # - transcribe.py audio.m4a output_base (when 2nd arg is not a number)
+    num_speakers = None
+    output_base = "transcript"
+
+    if len(sys.argv) >= 3:
+        # Check if 2nd arg is a number
+        try:
+            num_speakers = int(sys.argv[2])
+            if len(sys.argv) >= 4:
+                output_base = sys.argv[3]
+        except ValueError:
+            # 2nd arg is not a number, so it's the output_base
+            output_base = sys.argv[2]
 
     if not os.path.exists(file_path):
         print(json.dumps({"error": f"File not found: {file_path}"}))
@@ -219,7 +239,7 @@ if __name__ == "__main__":
         result, n_speakers = transcribe_with_speakers(file_path, num_speakers=num_speakers)
         elapsed_time = time.time() - start_time
 
-        output_file = "transcript_speakers.txt"
+        output_file = f"{output_base}_speakers.txt"
         with open(output_file, "w", encoding="utf-8") as f:
             f.write(result)
 

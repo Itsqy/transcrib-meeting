@@ -1,6 +1,7 @@
 """
-Auto-Detecting Speaker Diarization Script.
+Auto-Detecting Speaker Diarization Script (Enhanced Version)
 Uses Silhouette Score to automatically find the optimal number of speakers.
+Now supports both resemblyzer and pyannote.audio backends.
 """
 import sys
 import os
@@ -12,6 +13,15 @@ from sklearn.metrics import silhouette_score
 from pydub import AudioSegment
 import soundfile as sf
 import tempfile
+
+# Try to import new modular components
+try:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from src.diarization import EnhancedDiarization
+    MODULAR_AVAILABLE = True
+except ImportError:
+    MODULAR_AVAILABLE = False
+    print("Note: Using legacy mode (modular components not found)")
 
 def format_time(seconds):
     h = int(seconds // 3600)
@@ -52,6 +62,31 @@ def main():
     audio_path = sys.argv[1] if len(sys.argv) > 1 else "audio.m4a"
     transcript_path = "transcript.txt"
 
+    # Use modular components if available
+    if MODULAR_AVAILABLE:
+        print("🚀 Using enhanced diarization system")
+        print("")
+
+        diarization = EnhancedDiarization()
+
+        print("[1/2] Parsing existing transcript...")
+        segments = parse_existing_transcript(transcript_path)
+        if not segments:
+            print("ERROR: transcript.txt not found or empty.")
+            sys.exit(1)
+
+        print("[2/2] Running enhanced diarization...")
+        diarized_segments = diarization.diarize(audio_path, segments=segments)
+
+        # Write output
+        write_output(diarized_segments, "transcript_speakers.txt")
+
+        n_speakers = len(set(s['speaker'] for s in diarized_segments))
+        print(f"\n✨ Diarization complete: {n_speakers} speakers detected")
+        print(f"📄 Saved to: transcript_speakers.txt")
+        return
+
+    # Legacy mode (original implementation)
     print("[1/3] Parsing existing transcript...")
     segments = parse_existing_transcript(transcript_path)
     if not segments:
@@ -61,12 +96,12 @@ def main():
     print("[2/3] Extracting voice embeddings (High Resolution)...")
     wav = load_audio_as_wav(audio_path)
     encoder = VoiceEncoder("cpu")
-    
+
     # 1.5s windows with 0.75s hop for high precision
     embeddings = []
     time_points = []
     total_duration = len(wav) / 16000
-    
+
     for start_t in np.arange(0, total_duration - 1.5, 0.75):
         s = int(start_t * 16000)
         e = int((start_t + 1.5) * 16000)
@@ -78,12 +113,12 @@ def main():
         except: pass
 
     embeddings = np.array(embeddings)
-    
+
     print("[3/3] Auto-detecting optimal number of speakers...")
     best_n = 2
     max_score = -1
     best_labels = None
-    
+
     # Test from 2 to 8 speakers to find the "sweet spot"
     for n in range(2, 9):
         clustering = AgglomerativeClustering(n_clusters=n, metric='cosine', linkage='average')
@@ -110,10 +145,34 @@ def main():
             prev_speaker = speaker_name
         output_lines.append(f"  {ts} {seg['text']}")
 
-    with open("transcript_speakers.txt", "w", encoding="utf-8") as f:
-        f.write("\n".join(output_lines).strip())
-    
-    print(f"📄 Saved to: transcript_speakers.txt")
+    write_output_from_lines(output_lines, "transcript_speakers.txt")
+
+
+def write_output(segments, output_path):
+    """Write diarized segments to file."""
+    output_lines = []
+    prev_speaker = None
+
+    for seg in segments:
+        speaker = seg['speaker']
+        ts = f"[{format_time(seg['start'])} - {format_time(seg['end'])}]"
+
+        if speaker != prev_speaker:
+            output_lines.append(f"\n--- {speaker} ---")
+            prev_speaker = speaker
+
+        output_lines.append(f"  {ts} {seg['text']}")
+
+    write_output_from_lines(output_lines, output_path)
+
+
+def write_output_from_lines(lines, output_path):
+    """Write output lines to file."""
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines).strip())
+
+    print(f"📄 Saved to: {output_path}")
+
 
 if __name__ == "__main__":
     main()

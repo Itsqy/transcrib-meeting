@@ -23,6 +23,95 @@ SPEAKER_STYLES = {
 }
 
 MAX_SENTENCES_PER_PARAGRAPH = 6
+MIN_SEGMENT_LENGTH = 80  # Minimum characters before starting a new "sentence"
+MAX_SENTENCE_LENGTH = 600  # Maximum characters for a single sentence (prevent overly long)
+MIN_SENTENCE_END_CHARS = ['.', '!', '?', ',', ';']  # Characters that indicate potential end
+
+
+def build_sentences(segments):
+    """
+    Combine consecutive short segments into coherent sentences.
+    Groups fragments until we have a complete thought or reach minimum length.
+    More aggressive combining for better readability.
+    """
+    if not segments:
+        return []
+
+    sentences = []
+    current_sentence = {
+        "segments": [],
+        "text": [],
+    }
+
+    for i, seg in enumerate(segments):
+        text = seg["text"].strip()
+
+        # Skip empty segments
+        if not text:
+            continue
+
+        # Look ahead to check if we should combine with next segment
+        next_text = None
+        if i + 1 < len(segments):
+            next_text = segments[i + 1]["text"].strip()
+
+        # Add to current sentence
+        current_sentence["segments"].append(seg)
+        current_sentence["text"].append(text)
+
+        combined_text = " ".join(current_sentence["text"])
+        text_length = len(combined_text)
+
+        # Check if we should end the sentence
+        end_sentence = False
+
+        # Hard cap - never exceed maximum length
+        if text_length >= MAX_SENTENCE_LENGTH:
+            end_sentence = True
+        # Strong terminators - only end if sentence is substantial length
+        elif text and text[-1] in ['!', '?']:
+            # Keep combining if very short
+            if text_length >= MIN_SEGMENT_LENGTH:
+                end_sentence = True
+            # Or if next is a new topic (starts with capital and we have some content)
+            elif next_text and next_text[0].isupper() and len(current_sentence["text"]) > 2:
+                end_sentence = True
+        # Period - end if sentence is long enough
+        elif text and text[-1] == '.':
+            if text_length >= MIN_SEGMENT_LENGTH:
+                end_sentence = True
+            # Or if next segment starts with capital (likely new sentence)
+            elif next_text and next_text[0].isupper() and len(current_sentence["text"]) > 1:
+                end_sentence = True
+        # Comma or other - continue unless we're very long
+        elif text and text[-1] in [',', ';', ':']:
+            if text_length >= MIN_SEGMENT_LENGTH * 2.5:
+                end_sentence = True
+        # No clear ending - check length
+        elif text_length >= MIN_SEGMENT_LENGTH * 2:
+            # End if next starts with capital and current is substantial
+            if next_text and next_text[0].isupper() and len(current_sentence["text"]) > 1:
+                end_sentence = True
+
+        if end_sentence:
+            # Save the sentence
+            sentences.append({
+                "start": current_sentence["segments"][0]["start"],
+                "end": current_sentence["segments"][-1]["end"],
+                "text": " ".join(current_sentence["text"])
+            })
+            # Reset
+            current_sentence = {"segments": [], "text": []}
+
+    # Add any remaining text
+    if current_sentence["text"]:
+        sentences.append({
+            "start": current_sentence["segments"][0]["start"],
+            "end": current_sentence["segments"][-1]["end"],
+            "text": " ".join(current_sentence["text"])
+        })
+
+    return sentences
 
 
 def load_speaker_mapping():
@@ -34,9 +123,9 @@ def load_speaker_mapping():
     return {}
 
 
-def load_summary():
-    """Load AI summary from summary.json if exists."""
-    summary_file = "summary.json"
+def load_summary(output_base="transcript"):
+    """Load AI summary from {output_base}_summary.json if exists."""
+    summary_file = f"{output_base}_summary.json"
     if os.path.exists(summary_file):
         with open(summary_file, "r", encoding="utf-8") as f:
             return json.load(f)
@@ -154,16 +243,18 @@ def build_markdown(blocks, audio_filename, summary=None):
         lines.append(f"### {icon} {speaker} &nbsp;•&nbsp; `{start} – {end}`")
         lines.append("")
 
-        # Split segments into paragraphs of N sentences
-        segments = block["segments"]
-        for i in range(0, len(segments), MAX_SENTENCES_PER_PARAGRAPH):
-            chunk = segments[i:i + MAX_SENTENCES_PER_PARAGRAPH]
-            ts_start = chunk[0]["start"]
-            ts_end = chunk[-1]["end"]
-            text = " ".join(seg["text"] for seg in chunk)
+        # Build sentences by combining consecutive segments
+        # Groups short fragments into complete sentences
+        sentences = build_sentences(block["segments"])
 
-            lines.append(f"**`{ts_start}`** — {text}")
-            lines.append("")
+        for sentence_data in sentences:
+            ts_start = sentence_data["start"]
+            ts_end = sentence_data["end"]
+            text = sentence_data["text"].strip()
+
+            if text:
+                lines.append(f"**`{ts_start}`** — {text}")
+                lines.append("")
 
     # Footer
     lines.append("---")
@@ -190,8 +281,43 @@ def format_summary(summary):
         lines.append(summary["executive_summary"])
         lines.append("")
 
-    # Key topics
-    if summary.get("key_topics"):
+    # Discussion Points (Hierarchical structure)
+    discussion_points = summary.get('discussion_points', [])
+    if discussion_points and isinstance(discussion_points, list):
+        lines.append("### 🔍 Pembahasan Detail")
+
+        for topic_data in discussion_points:
+            if isinstance(topic_data, dict):
+                topic = topic_data.get('topic', 'Topik tanpa judul')
+                ts_start = topic_data.get('timestamp_start', '')
+                ts_end = topic_data.get('timestamp_end', '')
+
+                # Topic header with timestamp
+                lines.append(f"#### 📌 {topic}")
+                if ts_start and ts_end:
+                    lines.append(f"*{ts_start} - {ts_end}*")
+                lines.append("")
+
+                # Sub-points
+                sub_points = topic_data.get('sub_points', [])
+                if sub_points and isinstance(sub_points, list):
+                    for sp in sub_points:
+                        if isinstance(sp, dict):
+                            point = sp.get('point', '')
+                            details = sp.get('details', '')
+                            speaker = sp.get('speaker', '')
+
+                            if point:
+                                if details:
+                                    lines.append(f"- **{point}**: {details}")
+                                else:
+                                    lines.append(f"- **{point}**")
+                                if speaker and speaker != 'null':
+                                    lines.append(f"  _— {speaker}_")
+                lines.append("")
+
+    # Key topics (fallback if no discussion_points)
+    elif summary.get("key_topics"):
         lines.append("### 📌 Topik Utama")
         for topic in summary["key_topics"]:
             lines.append(f"- {topic}")
@@ -236,13 +362,18 @@ def format_summary(summary):
 
 
 def main():
-    # Use the refined version if available, otherwise fallback to raw
-    input_file = "transcript_speakers_refined.txt"
-    if not os.path.exists(input_file):
-        input_file = "transcript_speakers.txt"
+    import sys
 
-    output_file = "transcript.md"
-    audio_file = "audio.m4a"
+    # Get output base from command line or use default
+    output_base = sys.argv[1] if len(sys.argv) > 1 else "transcript"
+
+    # Use the refined version if available, otherwise fallback to raw
+    input_file = f"{output_base}_speakers_refined.txt"
+    if not os.path.exists(input_file):
+        input_file = f"{output_base}_speakers.txt"
+
+    output_file = f"{output_base}.md"
+    audio_file = f"{output_base}.m4a"
 
     if not os.path.exists(input_file):
         print(f"ERROR: {input_file} not found")
@@ -253,11 +384,11 @@ def main():
     print(f"  Found {len(blocks)} speaking turns")
 
     print(f"[2/3] Loading AI summary...")
-    summary = load_summary()
+    summary = load_summary(output_base)
     if summary:
         print(f"  Summary found: {summary.get('provider', 'unknown')} / {summary.get('model', 'unknown')}")
     else:
-        print(f"  No summary found (summary.json)")
+        print(f"  No summary found ({output_base}_summary.json)")
 
     print(f"[3/3] Building Markdown...")
     md = build_markdown(blocks, audio_file, summary)

@@ -11,7 +11,7 @@ pyannote.audio>=3.0.0
 resemblyzer>=0.1.1
 pyannote.core>=5.0.0
 pyannote.metrics>=3.0.0
-pyannote.dataset>=2.0.0
+# pyannote.dataset>=2.0.0  # Requires Python 3.10+, optional
 
 # Audio processing
 pydub>=0.25.0
@@ -35,8 +35,8 @@ tqdm>=4.65.0
 # silero-vad is usually downloaded automatically, but you can also use:
 # webrtcvad>=2.0.10
 
-# Optional: For local LLM support
-# requests>=2.31.0  # For API calls to local models
+# For local LLM support (Ollama)
+requests>=2.31.0  # For API calls to local models
 
 # Development dependencies (optional)
 # pytest>=7.4.0

@@ -75,10 +75,23 @@ def process_file(input_path, output_path):
     print(f"✓ Success! Refined version saved to: {output_path}")
 
 if __name__ == "__main__":
+    import sys
+
+    # Get output base from command line or use default
+    output_base = sys.argv[1] if len(sys.argv) > 1 else "transcript"
+
     # Refine raw text if exists
-    if os.path.exists("transcript_speakers.txt"):
-        process_file("transcript_speakers.txt", "transcript_speakers_refined.txt")
-    
+    input_file = f"{output_base}_speakers.txt"
+    output_file = f"{output_base}_speakers_refined.txt"
+
+    if os.path.exists(input_file):
+        process_file(input_file, output_file)
+    else:
+        print(f"⚠️  Input file not found: {input_file}")
+
     # Refine markdown if exists
-    if os.path.exists("transcript.md"):
-        process_file("transcript.md", "transcript_refined.md")
+    md_input = f"{output_base}.md"
+    md_output = f"{output_base}_refined.md"
+
+    if os.path.exists(md_input):
+        process_file(md_input, md_output)

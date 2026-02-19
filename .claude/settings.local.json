@@ -2,7 +2,22 @@
   "permissions": {
     "allow": [
       "Bash(ls:*)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(chmod:*)",
+      "Bash(python3:*)",
+      "Bash(source:*)",
+      "Bash(pip install:*)",
+      "Bash(/Users/muhammadrifqisyatria/Downloads/transcrib/venv/bin/python3:*)",
+      "Bash(python:*)",
+      "Bash(echo:*)",
+      "Bash(grep:*)",
+      "Bash(do echo -n . sleep 10 done echo echo '✅ Transcription complete!' echo ls -lh transcript_speakers.txt echo echo '=== Sample from transcript ===' head -80 transcript_speakers.txt)",
+      "Bash(xargs:*)",
+      "Bash(./process.sh:*)",
+      "Bash(ps:*)",
+      "Bash(ollama pull:*)",
+      "Bash(if:*)",
+      "Bash(then echo '✅ Download completed!' ollama list)"
     ]
   }
 }

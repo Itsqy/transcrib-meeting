@@ -109,7 +109,12 @@ class Config:
                 base[key] = value
 
     def _apply_device_detection(self):
-        """Auto-detect and set the best available device."""
+        """
+        Auto-detect and set the best available device.
+
+        Note: faster-whisper doesn't support MPS (Apple Silicon) yet, so we use CPU.
+        For MPS support, consider using the original OpenAI Whisper model.
+        """
         import torch
 
         device = self.config['transcription']['device']
@@ -119,10 +124,9 @@ class Config:
             if torch.cuda.is_available():
                 device = 'cuda'
                 compute_type = 'float16' if compute_type == 'auto' else compute_type
-            elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-                device = 'mps'
-                compute_type = 'float16' if compute_type == 'auto' else compute_type
             else:
+                # MPS (Apple Silicon) is not supported by faster-whisper yet
+                # Fall back to CPU with int8 quantization
                 device = 'cpu'
                 compute_type = 'int8' if compute_type == 'auto' else compute_type
 
@@ -202,13 +206,21 @@ def get_config(config_path: Optional[str] = None) -> Config:
     Get or create global configuration instance.
 
     Args:
-        config_path: Path to config file (only used on first call)
+        config_path: Path to config file (only used on first call).
+                    If None, tries default location 'config/config.yaml'
 
     Returns:
         Config instance
     """
     global _global_config
     if _global_config is None:
+        # Use default config path if not provided
+        if config_path is None:
+            # Try to find config.yaml in standard locations
+            for possible_path in ['config/config.yaml', './config.yaml']:
+                if os.path.exists(possible_path):
+                    config_path = possible_path
+                    break
         _global_config = Config(config_path)
     return _global_config
 

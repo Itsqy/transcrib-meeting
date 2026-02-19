@@ -4,6 +4,7 @@ Supports OpenAI GPT and local LLMs.
 """
 import json
 import logging
+import time
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 
@@ -83,9 +84,20 @@ class MeetingSummarizer:
             try:
                 response = requests.get(f"{self.base_url}/api/tags", timeout=5)
                 if response.status_code != 200:
-                    logger.warning(f"Local LLM server may not be running at {self.base_url}")
-            except Exception:
-                logger.warning(f"Cannot connect to local LLM at {self.base_url}")
+                    logger.warning(
+                        f"Local LLM server may not be running at {self.base_url}. "
+                        f"Start Ollama with: ollama serve"
+                    )
+            except requests.exceptions.ConnectionError:
+                logger.warning(
+                    f"Cannot connect to local LLM at {self.base_url}. "
+                    f"Make sure Ollama is running: ollama serve"
+                )
+            except requests.exceptions.Timeout:
+                logger.warning(
+                    f"Connection to local LLM at {self.base_url} timed out. "
+                    f"Check if Ollama is running."
+                )
 
             logger.info(f"Local LLM client initialized: {self.model} at {self.base_url}")
 
@@ -115,6 +127,20 @@ Buat rangkuman dengan format JSON berikut:
 {{
   "executive_summary": "Ringkasan eksekutif 2-3 kalimat",
   "key_topics": ["Topik 1", "Topik 2", "Topik 3"],
+  "discussion_points": [
+    {{
+      "topic": "Topik utama",
+      "timestamp_start": "HH:MM",
+      "timestamp_end": "HH:MM",
+      "sub_points": [
+        {{
+          "point": "Sub-poin utama",
+          "details": "Detail penjelasan tentang sub-poin ini",
+          "speaker": "Nama pembicara (jika relevan)"
+        }}
+      ]
+    }}
+  ],
   "decisions": [
     {{"topic": "Topik", "decision": "Keputusan yang dibuat", "by": "Pihak yang memutuskan"}}
   ],
@@ -126,9 +152,14 @@ Buat rangkuman dengan format JSON berikut:
 
 Petunjuk:
 - Executive summary: capture poin utama secara ringkas
-- Key topics: topik utama yang dibahas (3-7 items)
+- Key topics: daftar topik utama yang dibahas (3-7 items)
+- Discussion points: struktur hierarkis dengan:
+  * topic: topik utama yang dibahas
+  * timestamp_start dan timestamp_end: estimasi waktu pembahasan (jika bisa diperkirakan dari transkrip)
+  * sub_points: daftar sub-poin dengan detail penjelasan
 - Decisions: keputusan penting yang dibuat beserta konteksnya
 - Action items: tugas konkret dengan PIC (Person In Charge) yang jelas
+- Kelompokkan pembahasan berdasarkan topik meskipun pembicaraan melompat antar topik
 - Jika informasi tidak tersedia, gunakan null atau string kosong
 - Gunakan nama pembicara asli dari transkrip untuk PIC
 
@@ -150,8 +181,20 @@ Output HANYA JSON valid, tanpa teks tambahan."""
 
         return response.choices[0].message.content
 
-    def _call_local_llm(self, prompt: str) -> str:
-        """Call local LLM API."""
+    def _call_local_llm(self, prompt: str, max_retries: int = 3) -> str:
+        """
+        Call local LLM API with retry logic.
+
+        Args:
+            prompt: The prompt to send to the LLM
+            max_retries: Maximum number of retry attempts
+
+        Returns:
+            LLM response text
+
+        Raises:
+            Exception: If all retries fail
+        """
         import requests
 
         payload = {
@@ -163,15 +206,82 @@ Output HANYA JSON valid, tanpa teks tambahan."""
             }
         }
 
-        response = requests.post(
-            f"{self.base_url}/api/generate",
-            json=payload,
-            timeout=120
-        )
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"Calling local LLM (attempt {attempt + 1}/{max_retries})...")
 
-        response.raise_for_status()
-        data = response.json()
-        return data.get("response", "")
+                response = requests.post(
+                    f"{self.base_url}/api/generate",
+                    json=payload,
+                    timeout=300  # 5 minutes timeout for long transcripts
+                )
+
+                response.raise_for_status()
+                data = response.json()
+                result = data.get("response", "")
+
+                if not result:
+                    raise ValueError("Empty response from local LLM")
+
+                logger.info("Local LLM response received successfully")
+                return result
+
+            except requests.exceptions.ConnectionError as e:
+                last_error = e
+                logger.error(
+                    f"Failed to connect to Ollama at {self.base_url}. "
+                    f"Make sure Ollama is running: ollama serve"
+                )
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt  # Exponential backoff: 1, 2, 4 seconds
+                    logger.info(f"Retrying in {wait_time} seconds...")
+                    time.sleep(wait_time)
+
+            except requests.exceptions.Timeout as e:
+                last_error = e
+                logger.error(
+                    f"Request to Ollama timed out. "
+                    f"The model may still be loading or the transcript is too long."
+                )
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    logger.info(f"Retrying in {wait_time} seconds...")
+                    time.sleep(wait_time)
+
+            except requests.exceptions.HTTPError as e:
+                last_error = e
+                logger.error(f"HTTP error from Ollama: {e}")
+
+                if response.status_code == 404:
+                    logger.error(
+                        f"Model '{self.model}' not found. "
+                        f"Download it with: ollama pull {self.model}"
+                    )
+                    break  # Don't retry for 404 errors
+                elif response.status_code == 500:
+                    # Server error, may be worth retrying
+                    if attempt < max_retries - 1:
+                        wait_time = 2 ** attempt
+                        logger.info(f"Retrying in {wait_time} seconds...")
+                        time.sleep(wait_time)
+
+            except Exception as e:
+                last_error = e
+                logger.error(f"Unexpected error calling local LLM: {e}")
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    logger.info(f"Retrying in {wait_time} seconds...")
+                    time.sleep(wait_time)
+
+        # All retries failed
+        error_msg = (
+            f"Failed to call local LLM after {max_retries} attempts. "
+            f"Last error: {last_error}"
+        )
+        logger.error(error_msg)
+
+        raise Exception(error_msg)
 
     def _parse_response(self, response: str) -> Dict[str, Any]:
         """

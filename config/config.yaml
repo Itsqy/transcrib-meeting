@@ -5,11 +5,12 @@ transcription:
   # Model: "tiny", "base", "small", "medium", "large-v1", "large-v2", "large-v3-turbo"
   model: "large-v3-turbo"
 
-  # Device: "cpu", "cuda", "mps" (auto-detected if set to "auto")
+  # Device: "cpu", "cuda" (auto-detected if set to "auto")
+  # Note: MPS (Apple Silicon) is not supported by faster-whisper yet
   device: "auto"
 
   # Compute type: "int8", "float16", "float32"
-  # Use "int8" for CPU, "float16" for GPU/CUDA/MPS
+  # Use "int8" for CPU, "float16" for GPU/CUDA
   compute_type: "auto"
 
   # Language (enforced)
@@ -54,7 +55,9 @@ diarization:
   # Clustering settings
   clustering:
     # Distance threshold for auto-detecting number of speakers
-    distance_threshold: 0.55
+    # Lower = more speakers detected (0.35-0.45 recommended for accuracy)
+    # Higher = fewer speakers, may merge different people (0.55+)
+    distance_threshold: 0.40
     # Metric: "cosine", "euclidean"
     metric: "cosine"
     # Linkage: "average", "complete", "single"
@@ -85,8 +88,10 @@ speaker_identification:
 summarization:
   enabled: true
 
-  # Provider: "openai" or "local"
-  provider: "openai"
+  # Provider: "openai" (paid) or "local" (free with Ollama)
+  # - local: 100% free, runs offline, uses Ollama
+  # - openai: paid API, requires internet, faster/cloud
+  provider: "local"
 
   # OpenAI settings
   openai:
@@ -101,8 +106,8 @@ summarization:
 
   # Local LLM settings (experimental)
   local:
-    # Model path or name (e.g., "llama3.1")
-    model: "llama3.1"
+    # Model path or name (e.g., "llama3.1", "phi3")
+    model: "phi3"
     # Base URL for local API (e.g., Ollama)
     base_url: "http://localhost:11434"
     # Temperature
